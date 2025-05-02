@@ -124,6 +124,185 @@ pm2 start "java -jar /home/ubuntu/kiosk-system/kiosk-backend-0.0.1-SNAPSHOT.jar"
 # 4단계: 로그 확인
 pm2 logs kiosk-backend
 
+# 13장: AWS Lightsail에서 HTTPS 인증서 발급 및 적용 (Certbot + Let's Encrypt)
+
+---
+
+## 🧐 1. HTTPS 개념 설명
+
+* HTTPS = HTTP + SSL/TLS
+* 사용자가 브라우저에서 서버로 보낸 데이터가 **아무런 원천적 방패 없이 안전히 돌아가는것**을 말함
+* 카카오페이, 네이버페이 등 개인 개입 정보 필수 가슴 API 에서는 **HTTPS만 허용**함
+
+---
+
+## 🔐 2. Let's Encrypt + Certbot 개념
+
+| 기능                | 설명                                   |
+| ----------------- | ------------------------------------ |
+| **Let's Encrypt** | 무료 인증서 발급 CA (Certificate Authority) |
+| **Certbot**       | 인증서 발급 및 가장 간단한 CLI 방식 복사 단말         |
+
+**고유된 프로그램, 매니지 없이 무료 인증서 가능**한것이 큰 특징.
+
+---
+
+## ✨ 3. AWS Lightsail 인스턴스 생성 설정
+
+### 프로세스
+
+1. [https://aws.amazon.com](https://aws.amazon.com) 가입 및 로그인
+2. **Lightsail 검색 후 접속**
+3. "인스턴스 생성" 누르기
+4. 프로세스 설정:
+
+   * 지역: `Asia Pacific (Seoul)`
+   * OS: Ubuntu 22.04 LTS
+   * 범위: 최저보통 512MB
+   * 키: `새 PEM 키 생성` (ex: LightsailDefaultKey.pem)
+5. 버튼: \[생성] 누르기
+
+---
+
+## 🛡️ 4. 방패용 파이어월 (넷웨월컨\uud504기)
+
+### 게임용 카카오페이 개발 시
+
+1. Lightsail > 인스턴스 > ‘공개 IP’ 및 ‘개발’ 해당 IP 설정
+2. 제공 IP 가지고 개인 도메인 관리는 구조
+3. 예) DNS A게이지 등규적구성: `kiosktest.shop -> 3.38.x.x`
+4. Lightsail > ‘넷웨월컨\uud504기 > 방패용 포트 가능 (80/443)\`
+
+---
+
+## ✨ 5. Certbot 설치 및 인증서 발급
+
+```bash
+sudo apt update
+sudo apt install certbot
+```
+
+```bash
+sudo certbot certonly --standalone -d kiosktest.shop
+```
+
+▶ 성공 후 `/etc/letsencrypt/live/kiosktest.shop/` 여기에 pem 파일 4개 만들어집니다.
+
+---
+
+## 🔒 6. EC2 구성용 PEM vs HTTPS용 PEM 차지
+
+| 구도      | 파일                            | 설명                           |
+| ------- | ----------------------------- | ---------------------------- |
+| EC2 ssh | `LightsailDefaultKey.pem`     | 지정한 개발 인스턴스 ssh 접속 용         |
+| HTTPS   | `privkey.pem` `fullchain.pem` | certbot 이 생성. HTTPS SSL 인증서용 |
+
+---
+
+## ⌛ 7. 인증서 자동 갱신 (cron)
+
+```bash
+sudo crontab -e
+```
+
+```
+0 4 * * * /usr/bin/certbot renew --quiet
+```
+
+---
+
+## 🎓 8. Nginx 환경에 HTTPS 적용
+
+```bash
+sudo vi /etc/nginx/sites-available/default
+```
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name kiosktest.shop;
+
+    ssl_certificate     /etc/letsencrypt/live/kiosktest.shop/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/kiosktest.shop/privkey.pem;
+
+    location / {
+        proxy_pass http://localhost:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+```bash
+sudo systemctl restart nginx
+```
+
+---
+
+## ⚖️ 9. 실용 시 잘 받지 않는 경우
+
+| 사이드                     | 이유                 | 해결책                          |
+| ----------------------- | ------------------ | ---------------------------- |
+| QR X                    | redirect 주소 가 HTTP | Spring redirect URL https 변경 |
+| NET::ERR\_CERT\_INVALID | 인증서 무효/다른 도메인      | certbot 다시 발급 -d 확인          |
+
+---
+
+## 📅 10. 실습 정보 (백업과정)
+
+### ✔ \[백업 1] 그래듀 빌드 및 jar 출력
+
+```bash
+cd C:\kiosk-project\kiosk-backend
+./gradlew clean build
+```
+
+```bash
+scp -i ./pem/LightsailDefaultKey.pem build/libs/kiosk-backend-0.0.1-SNAPSHOT.jar \
+ubuntu@3.38.6.220:/home/ubuntu/kiosk-system/
+```
+
+### ✔ \[백업 2] 서버에 접속 후 jar 실행
+
+```bash
+ssh -i ./pem/LightsailDefaultKey.pem ubuntu@3.38.6.220
+pm2 restart kiosk-backend
+```
+
+### ✔ \[백업 3] 에러 확인
+
+```bash
+pm2 logs kiosk-backend
+cat /home/ubuntu/.pm2/logs/kiosk-backend-error.log
+```
+
+---
+
+## 👀 11. 프론트넷 HTTPS 배포시 단계
+
+```bash
+cd C:\kiosk-project\kiosk-frontend
+npm run build
+scp -i ../kiosk-backend/pem/LightsailDefaultKey.pem -r dist/* \
+ubuntu@3.38.6.220:/home/ubuntu/kiosk-system/src/main/resources/static/
+```
+
+---
+
+## 🤔 12. 에러 해결 시간이 가지는 의점
+
+* 그래듀 jar 만 발사가 아닌 구성되지 않은 jar이 실행 되면 SpringApplication 없다고 나오는 오류 발생
+* 그런 경우 jar 바로 실행 전 다시 gradle build
+
+---
+
+## 🚀 13. 정리
+
+* HTTPS가 가장 중요하며 Let's Encrypt 인증서는 무료고 가장 간편
+* pem 파일은 EC2 ssh용과 SSL 인증서용이 엄격히 구분됨
+* crontab 갱신 설정, nginx proxy pass, port forwarding, jar 배포, pm2 시그널 까지 가장 신속가 중요
+
+
 # 📘 13장: 실전 HTTPS 구축 및 인증서 발급 + 실습 리드미 (AWS 기준)
 
 ---
