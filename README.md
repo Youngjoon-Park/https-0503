@@ -107,6 +107,23 @@ pm2 restart kiosk-backend --update-env
 | 프론트 빌드 | `npm run build` |
 | 프론트 업로드 | `scp -i ... -r dist/* .../static/` |
 
+# 1단계: 빌드
+cd C:/kiosk-project/kiosk-backend
+./gradlew clean build
+
+# 2단계: 서버에 jar 복사
+scp -i C:/kiosk-project/kiosk-backend/pem/LightsailDefaultKey-ap-northeast-2.pem \
+build/libs/kiosk-backend-0.0.1-SNAPSHOT.jar \
+ubuntu@3.38.6.220:/home/ubuntu/kiosk-system/
+
+# 3단계: PM2 재시작
+ssh -i C:/kiosk-project/kiosk-backend/pem/LightsailDefaultKey-ap-northeast-2.pem ubuntu@3.38.6.220
+pm2 delete kiosk-backend
+pm2 start "java -jar /home/ubuntu/kiosk-system/kiosk-backend-0.0.1-SNAPSHOT.jar" --name kiosk-backend
+
+# 4단계: 로그 확인
+pm2 logs kiosk-backend
+
 # 📘 13장: 실전 HTTPS 구축 및 인증서 발급 + 실습 리드미 (AWS 기준)
 
 ---
@@ -116,6 +133,8 @@ pm2 restart kiosk-backend --update-env
 * HTTPS는 HTTP + SSL/TLS입니다.
 * 사용자의 **브라우저와 서버 간의 데이터 통신을 암호화**하여 도청, 위조 방지를 목표로 합니다.
 * 실무에서는 `https://` 접속이 필수가 되었고, 카카오페이/네이버페이 등 외부 API도 **HTTPS만 허용**합니다.
+
+* 
 
 ---
 
